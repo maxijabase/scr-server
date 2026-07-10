@@ -103,7 +103,7 @@ function validateEvent(obj: Record<string, unknown>): Result<EventMessage> {
  * schema change. Only structurally invalid input (not an object, missing/
  * mistyped `type`) is a hard error.
  */
-export function validateMessage(value: unknown): Result<RelayMessage> {
+function validateMessage(value: unknown): Result<RelayMessage> {
   if (!isRecord(value)) {
     return err('message must be a JSON object');
   }

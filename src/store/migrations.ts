@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
-export interface Migration {
+interface Migration {
   readonly id: number;
   readonly name: string;
   readonly up: (db: Database) => void;
@@ -11,7 +11,7 @@ export interface Migration {
  * `schema_migrations`. Append new migrations here rather than editing
  * existing ones once they've shipped.
  */
-export const migrations: readonly Migration[] = [
+const migrations: readonly Migration[] = [
   {
     id: 1,
     name: 'create_nodes_and_links',

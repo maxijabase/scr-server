@@ -7,7 +7,7 @@
  * (see src/store), everything else lives here.
  */
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface Config {
   readonly port: number;
@@ -18,7 +18,7 @@ export interface Config {
   readonly logLevel: LogLevel;
 }
 
-export class ConfigError extends Error {}
+class ConfigError extends Error {}
 
 const LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
 

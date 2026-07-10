@@ -42,7 +42,7 @@ export type KnownRelayMessage =
   | ChatMessage
   | EventMessage;
 
-export const KNOWN_MESSAGE_TYPES = [
+const KNOWN_MESSAGE_TYPES = [
   'authenticate',
   'authenticateResponse',
   'chat',
@@ -87,7 +87,7 @@ export function isKnownRelayMessage(message: RelayMessage): message is KnownRela
 /** Message kinds a Node can be restricted to sending/receiving via a Link's `allowedTypes`. */
 export type LinkableMessageType = Extract<KnownMessageType, 'chat' | 'event'>;
 
-export const LINKABLE_MESSAGE_TYPES: readonly LinkableMessageType[] = ['chat', 'event'];
+const LINKABLE_MESSAGE_TYPES: readonly LinkableMessageType[] = ['chat', 'event'];
 
 export function isLinkableMessageType(type: string): type is LinkableMessageType {
   return (LINKABLE_MESSAGE_TYPES as readonly string[]).includes(type);

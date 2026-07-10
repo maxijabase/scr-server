@@ -7,7 +7,7 @@ import type { BotContext } from './context.js';
  * `.addStringOption()` etc. calls produced them -- avoids depending on
  * discord.js's precise (and intentionally restrictive) builder return types.
  */
-export interface CommandData {
+interface CommandData {
   readonly name: string;
   toJSON(): unknown;
 }
