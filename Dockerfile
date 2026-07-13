@@ -9,6 +9,8 @@ COPY src ./src
 
 ENV NODE_ENV=production
 
+VOLUME ["/app/data"]
+
 EXPOSE 57452
 
 CMD ["bun", "run", "src/index.ts"]
