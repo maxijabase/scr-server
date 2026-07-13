@@ -1,6 +1,11 @@
 import type { Interaction, Message } from 'discord.js';
 import { Client, Events, GatewayIntentBits, MessageFlags, Partials } from 'discord.js';
-import { isLinkableRelayMessage, type ChatMessage, type RelayMessage } from '../protocol/messages.js';
+import {
+  isLinkableRelayMessage,
+  type ChatMessage,
+  type CommandMessage,
+  type RelayMessage,
+} from '../protocol/messages.js';
 import type { Store } from '../store/store.js';
 import { commands } from './commands/index.js';
 import type { BotContext } from './context.js';
@@ -8,13 +13,23 @@ import { formatMessageContent } from './formatting.js';
 import { registerCommands } from './registerCommands.js';
 
 export type IncomingMessageHandler = (senderId: string, message: RelayMessage) => void;
+export type OutgoingCommandHandler = (channelNodeId: string, message: CommandMessage) => void;
+
+/** Prefix that marks a Discord message as a server command rather than chat. */
+const COMMAND_PREFIX = '!';
+
+/** Discord's hard message content limit, minus room for the surrounding ``` fence. */
+const MAX_COMMAND_OUTPUT_LENGTH = 1990;
 
 export interface DiscordBotOptions {
   readonly token: string;
   readonly clientId: string;
   readonly guildId: string | undefined;
+  /** Discord user id of the bot owner. Always authorized for !commands and /op. */
+  readonly ownerId: string | undefined;
   readonly store: Store;
   readonly onMessage: IncomingMessageHandler;
+  readonly onCommand: OutgoingCommandHandler;
   readonly onLog?: (message: string) => void;
 }
 
@@ -34,7 +49,7 @@ export class DiscordBot {
 
   public constructor(options: DiscordBotOptions) {
     this.options = options;
-    this.ctx = { store: options.store };
+    this.ctx = { store: options.store, ownerId: options.ownerId };
     this.onMessage = options.onMessage;
     this.log = options.onLog ?? (() => {});
 
@@ -91,6 +106,29 @@ export class DiscordBot {
     return true;
   }
 
+  /**
+   * Delivers a game server's captured `ServerCommandEx()` output (see
+   * `CommandResponseMessage`) to the Discord channel that issued the
+   * command, enclosed in triple backticks. Bypasses `/format` templates --
+   * command output is raw console text, not a chat/event message.
+   */
+  public async deliverCommandOutput(channelId: string, output: string): Promise<boolean> {
+    const channel = await this.client.channels.fetch(channelId).catch(() => null);
+
+    if (!channel?.isSendable()) {
+      return false;
+    }
+
+    const trimmed = output.trim();
+    const body =
+      trimmed.length > MAX_COMMAND_OUTPUT_LENGTH
+        ? `${trimmed.slice(0, MAX_COMMAND_OUTPUT_LENGTH)}\n... (truncated)`
+        : trimmed;
+
+    await channel.send({ content: `\`\`\`\n${body.length > 0 ? body : '(no output)'}\n\`\`\`` });
+    return true;
+  }
+
   private async handleInteraction(interaction: Interaction): Promise<void> {
     if (interaction.isChatInputCommand()) {
       const command = commands.find((c) => c.data.name === interaction.commandName);
@@ -141,6 +179,14 @@ export class DiscordBot {
       return;
     }
 
+    // "!"-prefixed messages are always treated as server commands, never as
+    // chat -- regardless of whether the sender turns out to be authorized,
+    // so they're never accidentally relayed into the game as a message.
+    if (message.cleanContent.startsWith(COMMAND_PREFIX)) {
+      void this.handleCommandMessage(message, node.id);
+      return;
+    }
+
     const chatMessage: ChatMessage = {
       type: 'chat',
       entityName: node.displayName || message.channel.toString(),
@@ -151,5 +197,39 @@ export class DiscordBot {
     };
 
     this.onMessage(node.id, chatMessage);
+  }
+
+  private isAuthorizedOperator(discordUserId: string): boolean {
+    if (this.options.ownerId && discordUserId === this.options.ownerId) {
+      return true;
+    }
+
+    return this.options.store.operators.isAuthorized(discordUserId);
+  }
+
+  /** Dispatches a "!"-prefixed message as a server command if the sender is authorized. */
+  private async handleCommandMessage(message: Message, channelNodeId: string): Promise<void> {
+    const command = message.cleanContent.slice(COMMAND_PREFIX.length).trim();
+
+    if (!this.isAuthorizedOperator(message.author.id)) {
+      await message.react('❌').catch(() => {});
+      return;
+    }
+
+    if (command.length === 0) {
+      await message.react('❌').catch(() => {});
+      return;
+    }
+
+    const commandMessage: CommandMessage = {
+      type: 'command',
+      command,
+      issuedBy: message.author.id,
+      replyTo: channelNodeId,
+    };
+
+    this.options.onCommand(channelNodeId, commandMessage);
+
+    await message.react('✅').catch(() => {});
   }
 }

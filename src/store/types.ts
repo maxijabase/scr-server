@@ -26,6 +26,13 @@ export interface FilterRecord {
   readonly createdAt: string;
 }
 
+export interface OperatorRecord {
+  readonly id: number;
+  readonly discordUserId: string;
+  readonly addedBy: string;
+  readonly createdAt: string;
+}
+
 export interface FormatSettingRecord {
   readonly messageType: LinkableMessageType;
   /** Specific event name this setting overrides, or '' for the type's generic default. */

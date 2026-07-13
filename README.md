@@ -13,6 +13,7 @@ The companion SourceMod plugin that runs on the game server side lives in [scr-c
 - [Configuration](#configuration)
 - [Running](#running)
 - [Discord commands](#discord-commands)
+- [Running server commands from Discord](#running-server-commands-from-discord)
 - [Connecting a game server](#connecting-a-game-server)
 - [Wire protocol](#wire-protocol)
 - [Development](#development)
@@ -25,13 +26,14 @@ The companion SourceMod plugin that runs on the game server side lives in [scr-c
 - Lets admins choose which servers and channels talk to each other, in which direction, and for which message types. All of this is configured from within Discord, with no config file editing.
 - Supports a regex-based content filter to drop messages before they're ever routed.
 - Lets admins fully customize how chat/events are displayed in Discord, per message type or per specific event name, as either an embed or plain text with a placeholder template.
+- Lets the bot owner authorize specific Discord users to run server commands directly from a linked channel by prefixing a message with `!`, with the game server's console output relayed back in a code block.
 
 ## How it works
 
 The server has two transports and a small routing core that's agnostic to both:
 
 - **`RelayServer`** (`src/relay`). A Bun WebSocket server that game servers connect to. Each connection authenticates with a token, which the plugin persists on first connect, and becomes a **Node** of kind `game_server`.
-- **`DiscordBot`** (`src/bot`). A [discord.js](https://discord.js.org) client. Every Discord channel that has been linked becomes a **Node** of kind `discord_channel`. It also hosts the `/node`, `/link`, `/filter`, and `/format` slash commands used to administer everything below.
+- **`DiscordBot`** (`src/bot`). A [discord.js](https://discord.js.org) client. Every Discord channel that has been linked becomes a **Node** of kind `discord_channel`. It also hosts the `/node`, `/link`, `/filter`, `/format`, and `/op` slash commands used to administer everything below. Messages in a linked channel starting with `!` are never relayed as chat -- they're treated as a server command, and dispatched only if the sender is the bot owner or an authorized operator (see [Running server commands from Discord](#running-server-commands-from-discord)).
 - **`Router`** (`src/routing`). Given a message from a sending Node, it resolves which other Nodes should receive it by walking the **Link** graph. It then hands delivery off to whichever transport owns each destination Node. It has no idea whether a destination is a game server or a Discord channel. That job belongs to `src/index.ts`, which wires `Router`'s output back into `RelayServer.sendToNode` and `DiscordBot.deliverToChannel`.
 - **`Store`** (`src/store`). A SQLite database, accessed via `bun:sqlite`, holding Nodes, Links, content filters, and format settings. Schema migrations are plain functions in `src/store/migrations.ts`, applied once each and tracked in a `schema_migrations` table.
 
@@ -41,6 +43,7 @@ Here's what each concept means in practice:
 - **Link**. A directed or bidirectional connection between two Nodes, scoped to a set of message types such as `chat`, `event`, or both. Nothing is relayed between two Nodes until a Link exists between them.
 - **Content filter**. A list of regular expressions checked against a message's content before routing. A match drops the message entirely. It is never delivered anywhere, not even partially.
 - **Format setting**. An optional override of how `chat` and `event` messages render in Discord, keyed by message type and, for events, optionally a specific event name. Without one, messages use a built-in default embed.
+- **Operator**. A Discord user, besides the bot owner, authorized via `/op` to run `!`-prefixed messages as server commands on any game server linked to that channel. Operators are global, not scoped to a particular server or channel.
 
 ## Requirements
 
@@ -75,6 +78,7 @@ All configuration is via environment variables (Bun loads `.env` automatically).
 | `SCR_DISCORD_TOKEN` | **Yes** | None | Discord bot token. |
 | `SCR_DISCORD_CLIENT_ID` | **Yes** | None | Discord application/client id, used to register slash commands. |
 | `SCR_DISCORD_GUILD_ID` | No | None | If set, slash commands are registered to this single guild only, which is near-instant and good for development. Leave unset to register them globally, which can take up to an hour to propagate. |
+| `SCR_DISCORD_OWNER_ID` | No | None | Discord user id of the bot owner. Only this user can manage operators via `/op`. Owner and operators are the only users allowed to run `!`-prefixed messages as server commands. Leave unset to disable `/op` and remote command execution entirely. |
 | `SCR_DATABASE_PATH` | No | `./data/scr.sqlite` | Path to the SQLite database file. Parent directories are created automatically. |
 | `SCR_LOG_LEVEL` | No | `info` | One of `debug`, `info`, `warn`, `error`. |
 
@@ -103,7 +107,7 @@ The image (`Dockerfile`) is a minimal `oven/bun:1-alpine` build. It installs onl
 
 ## Discord commands
 
-All commands require the **Manage Guild** permission. They reply ephemerally, so only the admin who ran them can see the response.
+All commands reply ephemerally, so only the admin who ran them can see the response. `/node`, `/link`, `/filter`, and `/format` require the **Manage Guild** permission. `/op` requires **Administrator** as a coarse visibility filter, but is additionally gated at runtime to only the bot owner (`SCR_DISCORD_OWNER_ID`) -- see [`/op`](#op) below.
 
 ### `/node`
 
@@ -148,6 +152,24 @@ Available placeholders:
 
 `{profileUrl}` is derived automatically from `{idType}` and `{id}`. It is a Steam or Discord profile link, and it is never sent over the wire.
 
+### `/op`
+
+Manage which Discord users, besides the bot owner, are authorized to run `!`-prefixed messages as server commands (see [Running server commands from Discord](#running-server-commands-from-discord)). Every subcommand requires the caller's Discord user id to match `SCR_DISCORD_OWNER_ID` exactly -- if that variable is unset, `/op` replies that it's disabled instead of running the subcommand.
+
+- `/op create user:<@user>`: authorize a Discord user to run `!`-prefixed commands.
+- `/op list`: list all authorized operators.
+- `/op remove user:<@user>`: revoke a Discord user's authorization.
+
+## Running server commands from Discord
+
+The bot owner (`SCR_DISCORD_OWNER_ID`) and any user authorized via `/op` can run a command directly on the game server(s) linked to a channel by sending a message that starts with `!`, e.g. `!mp_restartgame`. The `!` and everything after it is sent as-is; the rest of the message is not otherwise parsed.
+
+- A `!`-prefixed message is **never** relayed to the game server as a chat message, whether or not the sender turns out to be authorized.
+- If the sender isn't the owner or an operator, the bot reacts with ❌ and nothing is sent to the game server.
+- If authorized, the bot reacts with ✅, and the command is dispatched to every `game_server` Node linked to that channel (regardless of Link `direction`/`allowedTypes` -- this bypasses the chat/event routing pipeline and content filter entirely).
+- The game server executes the command with SourceMod's `ServerCommandEx()`, which captures its printed console output, and relays that output back to the same channel enclosed in a code block (\`\`\`). Output longer than Discord's message limit is truncated. Commands that print nothing reply with `(no output)`.
+- The game server can locally disable remote execution regardless of the relay's operator list with the `scr_allow_remote_commands` convar (see [scr-client](https://github.com/maxijabase/scr-client)).
+
 ## Connecting a game server
 
 1. Install [scr-client](https://github.com/maxijabase/scr-client) on the game server (see its README for the SourceMod extension prerequisites) and point it at this server's host/port.
@@ -164,8 +186,10 @@ Messages are plain JSON objects sent over the WebSocket connection, one per fram
 | `authenticateResponse` | server → client | `success`, `reason?` |
 | `chat` | either | `entityName`, `idType` (`steam`\|`discord`\|`unknown`), `id`, `username`, `message` |
 | `event` | either | `entityName`, `event`, `data` |
+| `command` | server → client | `command`, `issuedBy` (Discord user id), `replyTo` (Discord channel Node id) |
+| `commandResponse` | client → server | `output`, `replyTo` (Discord channel Node id) |
 
-A connection must successfully `authenticate` before any other message is accepted. Unrecognized `type` values are not rejected outright. They are kept around as a generic passthrough, but nothing currently routes or displays them, since only `chat` and `event` count as "linkable" message types.
+A connection must successfully `authenticate` before any other message is accepted. Unrecognized `type` values are not rejected outright. They are kept around as a generic passthrough, but nothing currently routes or displays them, since only `chat` and `event` count as "linkable" message types. `command` and `commandResponse` are known types but deliberately not "linkable" -- they're resolved via `replyTo` and the Link graph directly in `src/index.ts`, bypassing the content filter and `/format` rendering entirely.
 
 ## Development
 
@@ -201,17 +225,17 @@ src/
 ├── store/
 │   ├── db.ts               # SQLite connection + migration bootstrap
 │   ├── migrations.ts       # ordered schema migrations
-│   ├── nodes.ts, links.ts, filters.ts, formatSettings.ts  # typed repositories
+│   ├── nodes.ts, links.ts, filters.ts, formatSettings.ts, operators.ts  # typed repositories
 │   ├── store.ts            # aggregates the repositories above
 │   └── types.ts            # shared record types
 └── bot/
-    ├── discordBot.ts        # Discord client: channel transport + command dispatch
-    ├── context.ts             # shared context (Store) passed to commands
+    ├── discordBot.ts        # Discord client: channel transport + command dispatch + !command handling
+    ├── context.ts             # shared context (Store, owner id) passed to commands
     ├── commandModule.ts       # SlashCommandModule interface
     ├── registerCommands.ts    # registers slash commands with Discord
     ├── formatting.ts          # renders a RelayMessage for Discord delivery
     ├── template.ts            # {placeholder} template rendering for /format
-    └── commands/               # /node, /link, /filter, /format implementations
+    └── commands/               # /node, /link, /filter, /format, /op implementations
 ```
 
 ## Differences from the original SCR

@@ -14,6 +14,7 @@ export interface Config {
   readonly discordToken: string;
   readonly discordClientId: string;
   readonly discordGuildId: string | undefined;
+  readonly discordOwnerId: string | undefined;
   readonly databasePath: string;
   readonly logLevel: LogLevel;
 }
@@ -74,6 +75,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     discordToken: readRequiredString(env, 'SCR_DISCORD_TOKEN'),
     discordClientId: readRequiredString(env, 'SCR_DISCORD_CLIENT_ID'),
     discordGuildId: readOptionalString(env, 'SCR_DISCORD_GUILD_ID'),
+    discordOwnerId: readOptionalString(env, 'SCR_DISCORD_OWNER_ID'),
     databasePath: env['SCR_DATABASE_PATH']?.trim() || './data/scr.sqlite',
     logLevel: readLogLevel(env, 'SCR_LOG_LEVEL', 'info'),
   };

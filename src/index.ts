@@ -1,6 +1,11 @@
 import { DiscordBot } from './bot/discordBot.js';
 import { loadConfig } from './config/config.js';
-import { isLinkableRelayMessage, type RelayMessage } from './protocol/messages.js';
+import {
+  isKnownRelayMessage,
+  isLinkableRelayMessage,
+  type CommandMessage,
+  type RelayMessage,
+} from './protocol/messages.js';
 import { RelayServer } from './relay/relayServer.js';
 import { Router } from './routing/router.js';
 import { Store } from './store/store.js';
@@ -27,6 +32,14 @@ let relayServer: RelayServer;
  * Node kind.
  */
 function handleIncomingMessage(senderId: string, message: RelayMessage): void {
+  // Command output bypasses the Router entirely -- it's addressed directly
+  // to the Discord channel that issued the command (see CommandMessage's
+  // `replyTo`), not resolved via the link graph.
+  if (isKnownRelayMessage(message) && message.type === 'commandResponse') {
+    void discordBot.deliverCommandOutput(message.replyTo, message.output);
+    return;
+  }
+
   if (!isLinkableRelayMessage(message)) {
     log('debug', `Ignoring message of non-linkable type "${message.type}" from ${senderId}`);
     return;
@@ -49,6 +62,36 @@ function handleIncomingMessage(senderId: string, message: RelayMessage): void {
   }
 }
 
+/**
+ * Dispatches a server command issued from a Discord channel (via an
+ * authorized operator's "!"-prefixed message) to every game server node
+ * linked to that channel. Bypasses the Router entirely -- this isn't
+ * chat/event content subject to filtering, and always goes straight to the
+ * game server(s), never back out to other Discord channels.
+ */
+function handleOutgoingCommand(channelNodeId: string, message: CommandMessage): void {
+  const linkedIds = store.links.findLinkedNodeIds(channelNodeId);
+
+  let delivered = 0;
+
+  for (const linkedId of linkedIds) {
+    const node = store.nodes.getById(linkedId);
+
+    if (node?.kind !== 'game_server') {
+      continue;
+    }
+
+    if (relayServer.sendToNode(node.id, message)) {
+      delivered += 1;
+    }
+  }
+
+  log(
+    'info',
+    `Command from ${message.issuedBy} on ${channelNodeId} dispatched to ${delivered} game server(s)`,
+  );
+}
+
 relayServer = new RelayServer({
   port: config.port,
   store,
@@ -60,8 +103,10 @@ discordBot = new DiscordBot({
   token: config.discordToken,
   clientId: config.discordClientId,
   guildId: config.discordGuildId,
+  ownerId: config.discordOwnerId,
   store,
   onMessage: handleIncomingMessage,
+  onCommand: handleOutgoingCommand,
   onLog: (message) => log('info', `[discord] ${message}`),
 });
 

@@ -3,6 +3,8 @@ import type {
   AuthenticateMessage,
   AuthenticateResponseMessage,
   ChatMessage,
+  CommandMessage,
+  CommandResponseMessage,
   EventMessage,
   IdentificationType,
   RelayMessage,
@@ -95,6 +97,43 @@ function validateEvent(obj: Record<string, unknown>): Result<EventMessage> {
   });
 }
 
+function validateCommand(obj: Record<string, unknown>): Result<CommandMessage> {
+  if (!isNonEmptyString(obj['command'])) {
+    return err('command message requires a non-empty string "command"');
+  }
+
+  if (!isNonEmptyString(obj['issuedBy'])) {
+    return err('command message requires a non-empty string "issuedBy"');
+  }
+
+  if (!isNonEmptyString(obj['replyTo'])) {
+    return err('command message requires a non-empty string "replyTo"');
+  }
+
+  return ok({
+    type: 'command',
+    command: obj['command'],
+    issuedBy: obj['issuedBy'],
+    replyTo: obj['replyTo'],
+  });
+}
+
+function validateCommandResponse(obj: Record<string, unknown>): Result<CommandResponseMessage> {
+  if (!isString(obj['output'])) {
+    return err('commandResponse message requires a string "output"');
+  }
+
+  if (!isNonEmptyString(obj['replyTo'])) {
+    return err('commandResponse message requires a non-empty string "replyTo"');
+  }
+
+  return ok({
+    type: 'commandResponse',
+    output: obj['output'],
+    replyTo: obj['replyTo'],
+  });
+}
+
 /**
  * Validates a decoded JSON value against the relay message schema.
  *
@@ -127,6 +166,10 @@ function validateMessage(value: unknown): Result<RelayMessage> {
       return validateChat(value);
     case 'event':
       return validateEvent(value);
+    case 'command':
+      return validateCommand(value);
+    case 'commandResponse':
+      return validateCommandResponse(value);
   }
 }
 

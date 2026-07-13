@@ -36,17 +36,52 @@ export interface EventMessage {
   readonly data: string;
 }
 
+/**
+ * A server command issued from Discord (via a "!"-prefixed message from an
+ * authorized operator) to be run directly on the linked game server with
+ * `ServerCommandEx()`. Deliberately kept out of `LinkableMessageType` -- this
+ * bypasses the chat/event content filter and routing pipeline entirely, so
+ * an admin command can never be silently dropped by a chat filter, and is
+ * resolved via its own dispatch path (see src/index.ts).
+ *
+ * `replyTo` is the Discord channel node id the command was issued from --
+ * carried through to the game server and echoed back in the corresponding
+ * `CommandResponseMessage` so the response can be routed to that exact
+ * channel without guessing from the link graph.
+ */
+export interface CommandMessage {
+  readonly type: 'command';
+  readonly command: string;
+  readonly issuedBy: string;
+  readonly replyTo: string;
+}
+
+/**
+ * The printed output of a `CommandMessage` that a game server captured via
+ * `ServerCommandEx()` and is sending back for delivery to the Discord
+ * channel identified by `replyTo`.
+ */
+export interface CommandResponseMessage {
+  readonly type: 'commandResponse';
+  readonly output: string;
+  readonly replyTo: string;
+}
+
 export type KnownRelayMessage =
   | AuthenticateMessage
   | AuthenticateResponseMessage
   | ChatMessage
-  | EventMessage;
+  | EventMessage
+  | CommandMessage
+  | CommandResponseMessage;
 
 const KNOWN_MESSAGE_TYPES = [
   'authenticate',
   'authenticateResponse',
   'chat',
   'event',
+  'command',
+  'commandResponse',
 ] as const satisfies readonly KnownRelayMessage['type'][];
 
 export type KnownMessageType = KnownRelayMessage['type'];

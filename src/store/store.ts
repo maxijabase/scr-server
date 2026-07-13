@@ -4,6 +4,7 @@ import { FilterRepository } from './filters.js';
 import { FormatSettingsRepository } from './formatSettings.js';
 import { LinkRepository } from './links.js';
 import { NodeRepository } from './nodes.js';
+import { OperatorRepository } from './operators.js';
 
 /** Ties together the SQLite connection and typed repositories for the rest of the app. */
 export class Store {
@@ -11,12 +12,14 @@ export class Store {
   public readonly links: LinkRepository;
   public readonly filters: FilterRepository;
   public readonly formatSettings: FormatSettingsRepository;
+  public readonly operators: OperatorRepository;
 
   private constructor(private readonly db: Database) {
     this.nodes = new NodeRepository(db);
     this.links = new LinkRepository(db);
     this.filters = new FilterRepository(db);
     this.formatSettings = new FormatSettingsRepository(db);
+    this.operators = new OperatorRepository(db);
   }
 
   public static open(path: string): Store {

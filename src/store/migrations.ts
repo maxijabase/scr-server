@@ -101,6 +101,20 @@ const migrations: readonly Migration[] = [
       db.run('DROP TABLE format_settings_old');
     },
   },
+  {
+    id: 5,
+    name: 'create_operators',
+    up: (db) => {
+      db.run(`
+        CREATE TABLE operators (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          discord_user_id TEXT NOT NULL UNIQUE,
+          added_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database): void {

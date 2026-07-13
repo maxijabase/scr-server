@@ -100,4 +100,32 @@ export class LinkRepository {
 
     return rows.map(toLinkRecord);
   }
+
+  /**
+   * All node ids linked to `nodeId` in either direction, regardless of
+   * `direction`/`allowedTypes`. Used for command dispatch (see /op and the
+   * "!"-prefixed command handler), which is a distinct concern from
+   * chat/event relay direction: if a channel is linked to a server at all,
+   * its operators can command it.
+   */
+  public findLinkedNodeIds(nodeId: string): string[] {
+    const rows = this.db
+      .query(
+        `SELECT source_node_id, target_node_id FROM links
+         WHERE source_node_id = ? OR target_node_id = ?`,
+      )
+      .all(nodeId, nodeId) as Pick<LinkRow, 'source_node_id' | 'target_node_id'>[];
+
+    const linkedIds = new Set<string>();
+
+    for (const row of rows) {
+      const otherId = row.source_node_id === nodeId ? row.target_node_id : row.source_node_id;
+
+      if (otherId !== nodeId) {
+        linkedIds.add(otherId);
+      }
+    }
+
+    return Array.from(linkedIds);
+  }
 }

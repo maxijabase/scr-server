@@ -52,7 +52,11 @@ export function formatMessageEmbed(message: RelayMessage): EmbedBuilder {
         .setTimestamp();
     case 'authenticate':
     case 'authenticateResponse':
-      // Internal handshake messages never reach Discord delivery.
+    case 'command':
+    case 'commandResponse':
+      // Internal handshake/command messages never reach Discord delivery
+      // through this generic path -- commandResponse is delivered via
+      // DiscordBot.deliverCommandOutput instead (see src/index.ts).
       return new EmbedBuilder().setColor(UNKNOWN_COLOR).setDescription('(internal message)');
   }
 }

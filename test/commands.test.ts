@@ -62,7 +62,7 @@ function fakeAutocomplete(commandName: string, focusedName: string, focusedValue
 
 beforeEach(() => {
   store = Store.open(':memory:');
-  ctx = { store };
+  ctx = { store, ownerId: 'owner-1' };
   replies = [];
 });
 
