@@ -26,9 +26,12 @@ export interface FilterRecord {
   readonly createdAt: string;
 }
 
+export type OperatorKind = 'user' | 'role';
+
 export interface OperatorRecord {
   readonly id: number;
-  readonly discordUserId: string;
+  readonly discordId: string;
+  readonly kind: OperatorKind;
   readonly addedBy: string;
   readonly createdAt: string;
 }

@@ -8,6 +8,7 @@ import { filterCommand } from '../src/bot/commands/filter.js';
 import { formatCommand } from '../src/bot/commands/format.js';
 import { linkCommand } from '../src/bot/commands/link.js';
 import { nodeCommand } from '../src/bot/commands/node.js';
+import { opCommand } from '../src/bot/commands/op.js';
 import type { BotContext } from '../src/bot/context.js';
 import { Store } from '../src/store/store.js';
 
@@ -20,13 +21,19 @@ function fakeInteraction(overrides: {
   strings?: Record<string, string>;
   integers?: Record<string, number>;
   channel?: { id: string; name: string };
+  user?: { id: string };
+  role?: { id: string };
+  callerId?: string;
 }): ChatInputCommandInteraction {
   return {
+    user: { id: overrides.callerId ?? 'owner-1' },
     options: {
       getSubcommand: () => overrides.subcommand,
       getString: (name: string) => overrides.strings?.[name] ?? null,
       getInteger: (name: string) => overrides.integers?.[name] ?? null,
       getChannel: (_name: string) => overrides.channel ?? null,
+      getUser: (_name: string) => overrides.user ?? null,
+      getRole: (_name: string) => overrides.role ?? null,
     },
     reply: async (payload: unknown) => {
       replies.push(payload);
@@ -398,5 +405,102 @@ describe('format command', () => {
 
     const reply = replies[0] as FakeReply;
     expect(reply.content).toContain('No custom formats configured');
+  });
+});
+
+describe('op command', () => {
+  test('rejects non-owner callers', async () => {
+    await opCommand.execute(
+      fakeInteraction({ subcommand: 'list', callerId: 'someone-else' }),
+      ctx,
+    );
+
+    const reply = replies[0] as FakeReply;
+    expect(reply.content).toContain('Only the bot owner');
+    expect(store.operators.list()).toHaveLength(0);
+  });
+
+  test('replies that /op is disabled when no owner id is configured', async () => {
+    ctx = { store, ownerId: undefined };
+
+    await opCommand.execute(fakeInteraction({ subcommand: 'list' }), ctx);
+
+    const reply = replies[0] as FakeReply;
+    expect(reply.content).toContain('disabled');
+  });
+
+  test('create authorizes a user', async () => {
+    await opCommand.execute(
+      fakeInteraction({ subcommand: 'create', user: { id: 'user-1' } }),
+      ctx,
+    );
+
+    expect(store.operators.isAuthorized('user-1', 'user')).toBe(true);
+    const reply = replies[0] as FakeReply;
+    expect(reply.content).toContain('Authorized');
+  });
+
+  test('create authorizes a role', async () => {
+    await opCommand.execute(
+      fakeInteraction({ subcommand: 'create', role: { id: 'role-1' } }),
+      ctx,
+    );
+
+    expect(store.operators.isAuthorized('role-1', 'role')).toBe(true);
+    const reply = replies[0] as FakeReply;
+    expect(reply.content).toContain('Authorized');
+  });
+
+  test('create rejects when neither user nor role is given', async () => {
+    await opCommand.execute(fakeInteraction({ subcommand: 'create' }), ctx);
+
+    const reply = replies[0] as FakeReply;
+    expect(reply.content).toContain('Provide either');
+    expect(store.operators.list()).toHaveLength(0);
+  });
+
+  test('create rejects when both user and role are given', async () => {
+    await opCommand.execute(
+      fakeInteraction({ subcommand: 'create', user: { id: 'user-1' }, role: { id: 'role-1' } }),
+      ctx,
+    );
+
+    const reply = replies[0] as FakeReply;
+    expect(reply.content).toContain('only one');
+    expect(store.operators.list()).toHaveLength(0);
+  });
+
+  test('list shows both users and roles', async () => {
+    store.operators.add('user-1', 'user', 'owner-1');
+    store.operators.add('role-1', 'role', 'owner-1');
+
+    await opCommand.execute(fakeInteraction({ subcommand: 'list' }), ctx);
+
+    const reply = replies[0] as FakeReply;
+    expect(reply.content).toContain('<@user-1> (user)');
+    expect(reply.content).toContain('<@&role-1> (role)');
+  });
+
+  test('remove revokes a role and reports success', async () => {
+    store.operators.add('role-1', 'role', 'owner-1');
+
+    await opCommand.execute(
+      fakeInteraction({ subcommand: 'remove', role: { id: 'role-1' } }),
+      ctx,
+    );
+
+    expect(store.operators.isAuthorized('role-1', 'role')).toBe(false);
+    const reply = replies[0] as FakeReply;
+    expect(reply.content).toContain('Revoked');
+  });
+
+  test('remove reports when the target is not an operator', async () => {
+    await opCommand.execute(
+      fakeInteraction({ subcommand: 'remove', user: { id: 'user-1' } }),
+      ctx,
+    );
+
+    const reply = replies[0] as FakeReply;
+    expect(reply.content).toContain('is not an operator');
   });
 });

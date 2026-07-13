@@ -131,6 +131,56 @@ describe('FilterRepository', () => {
   });
 });
 
+describe('OperatorRepository', () => {
+  test('add and list a user operator', () => {
+    store.operators.add('user-1', 'user', 'owner-1');
+
+    const operators = store.operators.list();
+    expect(operators).toHaveLength(1);
+    expect(operators[0]).toMatchObject({ discordId: 'user-1', kind: 'user', addedBy: 'owner-1' });
+  });
+
+  test('a user id and a role id can be authorized independently under the same raw id', () => {
+    store.operators.add('same-id', 'user', 'owner-1');
+    store.operators.add('same-id', 'role', 'owner-1');
+
+    expect(store.operators.list()).toHaveLength(2);
+    expect(store.operators.isAuthorized('same-id', 'user')).toBe(true);
+    expect(store.operators.isAuthorized('same-id', 'role')).toBe(true);
+  });
+
+  test('remove only removes the matching kind', () => {
+    store.operators.add('id-1', 'user', 'owner-1');
+    store.operators.add('id-1', 'role', 'owner-1');
+
+    expect(store.operators.remove('id-1', 'user')).toBe(true);
+    expect(store.operators.isAuthorized('id-1', 'user')).toBe(false);
+    expect(store.operators.isAuthorized('id-1', 'role')).toBe(true);
+  });
+
+  test('remove reports false for an operator that does not exist', () => {
+    expect(store.operators.remove('missing', 'user')).toBe(false);
+  });
+
+  test('isAuthorizedForUser is true when the user id itself is authorized', () => {
+    store.operators.add('user-1', 'user', 'owner-1');
+
+    expect(store.operators.isAuthorizedForUser('user-1', [])).toBe(true);
+  });
+
+  test('isAuthorizedForUser is true when any of the given role ids is authorized', () => {
+    store.operators.add('role-1', 'role', 'owner-1');
+
+    expect(store.operators.isAuthorizedForUser('user-1', ['role-2', 'role-1'])).toBe(true);
+  });
+
+  test('isAuthorizedForUser is false when neither the user id nor any role id is authorized', () => {
+    store.operators.add('role-1', 'role', 'owner-1');
+
+    expect(store.operators.isAuthorizedForUser('user-1', ['role-2'])).toBe(false);
+  });
+});
+
 describe('FormatSettingsRepository', () => {
   test('get returns undefined when unconfigured', () => {
     expect(store.formatSettings.get('chat')).toBeUndefined();

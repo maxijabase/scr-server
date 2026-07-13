@@ -199,19 +199,22 @@ export class DiscordBot {
     this.onMessage(node.id, chatMessage);
   }
 
-  private isAuthorizedOperator(discordUserId: string): boolean {
-    if (this.options.ownerId && discordUserId === this.options.ownerId) {
+  /** True if the message's author is the bot owner, an authorized operator, or holds an authorized operator role. */
+  private isAuthorizedOperator(message: Message): boolean {
+    if (this.options.ownerId && message.author.id === this.options.ownerId) {
       return true;
     }
 
-    return this.options.store.operators.isAuthorized(discordUserId);
+    const roleIds = message.member ? Array.from(message.member.roles.cache.keys()) : [];
+
+    return this.options.store.operators.isAuthorizedForUser(message.author.id, roleIds);
   }
 
   /** Dispatches a "!"-prefixed message as a server command if the sender is authorized. */
   private async handleCommandMessage(message: Message, channelNodeId: string): Promise<void> {
     const command = message.cleanContent.slice(COMMAND_PREFIX.length).trim();
 
-    if (!this.isAuthorizedOperator(message.author.id)) {
+    if (!this.isAuthorizedOperator(message)) {
       await message.react('❌').catch(() => {});
       return;
     }

@@ -43,7 +43,7 @@ Here's what each concept means in practice:
 - **Link**. A directed or bidirectional connection between two Nodes, scoped to a set of message types such as `chat`, `event`, or both. Nothing is relayed between two Nodes until a Link exists between them.
 - **Content filter**. A list of regular expressions checked against a message's content before routing. A match drops the message entirely. It is never delivered anywhere, not even partially.
 - **Format setting**. An optional override of how `chat` and `event` messages render in Discord, keyed by message type and, for events, optionally a specific event name. Without one, messages use a built-in default embed.
-- **Operator**. A Discord user, besides the bot owner, authorized via `/op` to run `!`-prefixed messages as server commands on any game server linked to that channel. Operators are global, not scoped to a particular server or channel.
+- **Operator**. A Discord user or role, besides the bot owner, authorized via `/op` to run `!`-prefixed messages as server commands on any game server linked to that channel. A role operator authorizes anyone holding that role, without adding them individually. Operators are global, not scoped to a particular server or channel.
 
 ## Requirements
 
@@ -154,15 +154,15 @@ Available placeholders:
 
 ### `/op`
 
-Manage which Discord users, besides the bot owner, are authorized to run `!`-prefixed messages as server commands (see [Running server commands from Discord](#running-server-commands-from-discord)). Every subcommand requires the caller's Discord user id to match `SCR_DISCORD_OWNER_ID` exactly -- if that variable is unset, `/op` replies that it's disabled instead of running the subcommand.
+Manage which Discord users and roles, besides the bot owner, are authorized to run `!`-prefixed messages as server commands (see [Running server commands from Discord](#running-server-commands-from-discord)). Every subcommand requires the caller's Discord user id to match `SCR_DISCORD_OWNER_ID` exactly -- if that variable is unset, `/op` replies that it's disabled instead of running the subcommand.
 
-- `/op create user:<@user>`: authorize a Discord user to run `!`-prefixed commands.
-- `/op list`: list all authorized operators.
-- `/op remove user:<@user>`: revoke a Discord user's authorization.
+- `/op create user:<@user>` or `/op create role:<@role>`: authorize a Discord user, or anyone holding a Discord role, to run `!`-prefixed commands. Provide exactly one of `user`/`role`.
+- `/op list`: list all authorized operators, both users and roles.
+- `/op remove user:<@user>` or `/op remove role:<@role>`: revoke a Discord user's or role's authorization.
 
 ## Running server commands from Discord
 
-The bot owner (`SCR_DISCORD_OWNER_ID`) and any user authorized via `/op` can run a command directly on the game server(s) linked to a channel by sending a message that starts with `!`, e.g. `!mp_restartgame`. The `!` and everything after it is sent as-is; the rest of the message is not otherwise parsed.
+The bot owner (`SCR_DISCORD_OWNER_ID`), any user authorized via `/op`, and anyone holding a role authorized via `/op` can run a command directly on the game server(s) linked to a channel by sending a message that starts with `!`, e.g. `!mp_restartgame`. The `!` and everything after it is sent as-is; the rest of the message is not otherwise parsed.
 
 - A `!`-prefixed message is **never** relayed to the game server as a chat message, whether or not the sender turns out to be authorized.
 - If the sender isn't the owner or an operator, the bot reacts with ❌ and nothing is sent to the game server.

@@ -115,6 +115,36 @@ const migrations: readonly Migration[] = [
       `);
     },
   },
+  {
+    id: 6,
+    name: 'add_operators_kind',
+    up: (db) => {
+      // Widens operators from just Discord users to also allow authorizing a
+      // whole Discord role -- anyone holding an authorized role can run
+      // "!"-prefixed commands, without being individually added. The unique
+      // key moves from discord_user_id alone to (discord_id, kind), since a
+      // user id and a role id could theoretically collide in isolation.
+      db.run('ALTER TABLE operators RENAME TO operators_old');
+
+      db.run(`
+        CREATE TABLE operators (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          discord_id TEXT NOT NULL,
+          kind TEXT NOT NULL CHECK (kind IN ('user', 'role')),
+          added_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          UNIQUE (discord_id, kind)
+        )
+      `);
+
+      db.run(`
+        INSERT INTO operators (discord_id, kind, added_by, created_at)
+        SELECT discord_user_id, 'user', added_by, created_at FROM operators_old
+      `);
+
+      db.run('DROP TABLE operators_old');
+    },
+  },
 ];
 
 export function runMigrations(db: Database): void {

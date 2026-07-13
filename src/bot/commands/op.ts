@@ -1,9 +1,16 @@
 import { MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
+import type { OperatorKind, OperatorRecord } from '../../store/types.js';
 import type { SlashCommandModule } from '../commandModule.js';
 
+function mentionFor(operator: Pick<OperatorRecord, 'discordId' | 'kind'>): string {
+  return operator.kind === 'role' ? `<@&${operator.discordId}>` : `<@${operator.discordId}>`;
+}
+
 /**
- * Manages the set of Discord users (besides the bot owner) authorized to
- * run "!"-prefixed messages as server commands on linked game servers.
+ * Manages the set of Discord users and roles (besides the bot owner)
+ * authorized to run "!"-prefixed messages as server commands on linked game
+ * servers. Anyone holding an authorized role is treated the same as an
+ * individually authorized user -- no need to add each member separately.
  *
  * Every subcommand additionally requires the caller to be the bot owner
  * (SCR_DISCORD_OWNER_ID) -- this is a runtime identity check rather than a
@@ -15,24 +22,26 @@ import type { SlashCommandModule } from '../commandModule.js';
 export const opCommand: SlashCommandModule = {
   data: new SlashCommandBuilder()
     .setName('op')
-    .setDescription('Manage Discord users authorized to run !commands on the game server')
+    .setDescription('Manage Discord users/roles authorized to run !commands on the game server')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand((sub) =>
       sub
         .setName('create')
-        .setDescription('Authorize a Discord user to run !commands')
+        .setDescription('Authorize a Discord user or role to run !commands')
         .addUserOption((opt) =>
-          opt.setName('user').setDescription('The Discord user to authorize').setRequired(true),
+          opt.setName('user').setDescription('The Discord user to authorize'),
+        )
+        .addRoleOption((opt) =>
+          opt.setName('role').setDescription('The Discord role to authorize'),
         ),
     )
     .addSubcommand((sub) => sub.setName('list').setDescription('List authorized operators'))
     .addSubcommand((sub) =>
       sub
         .setName('remove')
-        .setDescription('Revoke a Discord user\'s authorization to run !commands')
-        .addUserOption((opt) =>
-          opt.setName('user').setDescription('The Discord user to revoke').setRequired(true),
-        ),
+        .setDescription("Revoke a Discord user's or role's authorization to run !commands")
+        .addUserOption((opt) => opt.setName('user').setDescription('The Discord user to revoke'))
+        .addRoleOption((opt) => opt.setName('role').setDescription('The Discord role to revoke')),
     ),
 
   async execute(interaction, ctx) {
@@ -54,17 +63,6 @@ export const opCommand: SlashCommandModule = {
 
     const subcommand = interaction.options.getSubcommand();
 
-    if (subcommand === 'create') {
-      const user = interaction.options.getUser('user', true);
-      ctx.store.operators.add(user.id, ctx.ownerId);
-
-      await interaction.reply({
-        content: `Authorized <@${user.id}> to run !commands.`,
-        flags: MessageFlags.Ephemeral,
-      });
-      return;
-    }
-
     if (subcommand === 'list') {
       const operators = ctx.store.operators.list();
 
@@ -74,20 +72,56 @@ export const opCommand: SlashCommandModule = {
       }
 
       await interaction.reply({
-        content: operators.map((op) => `<@${op.discordUserId}>`).join('\n'),
+        content: operators
+          .map((op) => `${mentionFor(op)} (${op.kind})`)
+          .join('\n'),
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    // create/remove share the same "exactly one of user/role" target resolution.
+    const user = interaction.options.getUser('user');
+    const role = interaction.options.getRole('role');
+
+    if (!user && !role) {
+      await interaction.reply({
+        content: 'Provide either `user` or `role`.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    if (user && role) {
+      await interaction.reply({
+        content: 'Provide only one of `user` or `role`, not both.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const target: { readonly id: string; readonly kind: OperatorKind } = user
+      ? { id: user.id, kind: 'user' }
+      : { id: role!.id, kind: 'role' };
+    const mention = mentionFor({ discordId: target.id, kind: target.kind });
+
+    if (subcommand === 'create') {
+      ctx.store.operators.add(target.id, target.kind, ctx.ownerId);
+
+      await interaction.reply({
+        content: `Authorized ${mention} to run !commands.`,
         flags: MessageFlags.Ephemeral,
       });
       return;
     }
 
     if (subcommand === 'remove') {
-      const user = interaction.options.getUser('user', true);
-      const removed = ctx.store.operators.remove(user.id);
+      const removed = ctx.store.operators.remove(target.id, target.kind);
 
       await interaction.reply({
         content: removed
-          ? `Revoked <@${user.id}>'s authorization to run !commands.`
-          : `<@${user.id}> is not an operator.`,
+          ? `Revoked ${mention}'s authorization to run !commands.`
+          : `${mention} is not an operator.`,
         flags: MessageFlags.Ephemeral,
       });
     }
