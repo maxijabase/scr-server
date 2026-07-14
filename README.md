@@ -162,12 +162,13 @@ Manage which Discord users and roles, besides the bot owner, are authorized to r
 
 ## Running server commands from Discord
 
-The bot owner (`SCR_DISCORD_OWNER_ID`), any user authorized via `/op`, and anyone holding a role authorized via `/op` can run a command directly on the game server(s) linked to a channel by sending a message that starts with `!`, e.g. `!mp_restartgame`. The `!` and everything after it is sent as-is; the rest of the message is not otherwise parsed.
+The bot owner (`SCR_DISCORD_OWNER_ID`), any user authorized via `/op`, and anyone holding a role authorized via `/op` can run a command directly on the game server(s) linked to a channel by sending a message that starts with `!`, e.g. `!kick 2 baduser`. The `!` and everything after it is sent as-is; the rest of the message is not otherwise parsed.
 
 - A `!`-prefixed message is **never** relayed to the game server as a chat message, whether or not the sender turns out to be authorized.
 - If the sender isn't the owner or an operator, the bot reacts with ❌ and nothing is sent to the game server.
 - If authorized, the bot reacts with ✅, and the command is dispatched to every `game_server` Node linked to that channel (regardless of Link `direction`/`allowedTypes` -- this bypasses the chat/event routing pipeline and content filter entirely).
-- The game server executes the command with SourceMod's `ServerCommandEx()`, which captures its printed console output, and relays that output back to the same channel enclosed in a code block (\`\`\`). Output longer than Discord's message limit is truncated. Commands that print nothing reply with `(no output)`.
+- **The command is translated the same way SourceMod's in-game chat triggers are**: `!kick 2 baduser` runs as the SourceMod admin command `sm_kick 2 baduser`, exactly as if a player had typed `!kick 2 baduser` in chat. Prefix with `rcon ` to bypass this and run a raw console/engine command instead, e.g. `!rcon changelevel de_dust2` runs `changelevel de_dust2` completely unprefixed. A command that already starts with `sm_` is left as-is.
+- The game server executes the resulting command with SourceMod's `ServerCommandEx()`, which captures its printed console output, and relays that output back to the same channel enclosed in a code block (\`\`\`). Output longer than Discord's message limit is truncated. Commands that print nothing reply with `(no output)`.
 - The game server can locally disable remote execution regardless of the relay's operator list with the `scr_allow_remote_commands` convar (see [scr-client](https://github.com/maxijabase/scr-client)).
 
 ## Connecting a game server
